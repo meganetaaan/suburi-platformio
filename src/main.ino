@@ -1,15 +1,17 @@
 #include <M5Stack.h>
 #include <utility/M5Timer.h>
 #include <avator.h>
+#include <SimpleBLE.h>
 
 Avator avator;
 M5Timer t;
+SimpleBLE ble;
 int deg;
 
 void m () {
     Serial.println("called");
     M5.update();
-    int p = abs(sin(deg * PI / 360)) * 100;
+    int p = sin((double)deg * PI / 360) * 100;
     avator.openMouth(p);
     deg = (deg + 20) % 360;
     if (deg == 300)
@@ -24,6 +26,7 @@ void m () {
 
 void setup() {
     M5.begin();
+    ble.begin("Hello World!!");
     avator.init();
     deg = 0;
 }
