@@ -49,11 +49,11 @@ String urlencode(String str)
       yield();
     }
     return encodedString;
-    
 }
 
-StaticJsonBuffer<8000> JSONBuffer;
+StaticJsonBuffer<12000> JSONBuffer;
 char buffer[256];
+char subBuffer[64];
 WiFiClient client;
 
 Avator *avator;
@@ -152,29 +152,37 @@ String getTweets()
   }
 }
 
-// void showTweets(String message)
-void showTweets(String message1)
+void showTweets(String message)
 {
   JSONBuffer.clear();
-  Serial.println("parse: " + message1);
-  JsonArray &parsed = JSONBuffer.parseArray(message1);
+  Serial.println("parse: " + message);
+  JsonArray &parsed = JSONBuffer.parseArray(message);
   if (!parsed.success())
   {
     Serial.println("Parsing failed");
     return;
   }
+  
+  int charNum = M5.Lcd.width() / CHAR_WIDTH;
+  M5.Lcd.fillRect(0, 199, M5.Lcd.width(), 40, BLACK);
   for (int i = 0; i < parsed.size(); i++)
   {
     JsonObject &tweet = parsed[i];
 
     String text = tweet["text"];
     text.toCharArray(buffer, sizeof(buffer));
-    M5.Lcd.fillRect(0, 239 - CHAR_WIDTH * 2, M5.Lcd.width(), CHAR_WIDTH * 2, BLACK);
-    printJp(0, 239 - CHAR_WIDTH * 2, buffer);
+    for (int j = 0; j < 5; j++)
+    {
+      char *ptr = &buffer[charNum * j];
+      memcpy((void*)subBuffer , ptr, sizeof(subBuffer));
+      printJp(0, 199 + CHAR_WIDTH * j, subBuffer);
+      memset(subBuffer, 0, sizeof(subBuffer));
+    }
     memset(buffer, 0, sizeof(buffer));
     const char *roman = tweet["roman"];
-    // TTS.play(roman, 100);
+    TTS.play(roman, 100);
     delay(10000);
+    M5.Lcd.fillRect(0, 199, M5.Lcd.width(), 40, BLACK);
   }
 }
 
@@ -220,15 +228,14 @@ void setup()
   TTS.create(AQUESTALK_KEY);
   M5.begin();
   setupAvator();
-  // int iret = connectWifi();
-  // if (iret != 0)
-  // {
-  //   Serial.printf("cannot connect to wifi: %d\n", iret);
-  //   return;
-  // }
-  // Serial.print("connected to: ");
-  // Serial.println(WiFi.localIP());
-  showTweets(message);
+  int iret = connectWifi();
+  if (iret != 0)
+  {
+    Serial.printf("cannot connect to wifi: %d\n", iret);
+    return;
+  }
+  Serial.print("connected to: ");
+  Serial.println(WiFi.localIP());
 }
 
 void loop()
