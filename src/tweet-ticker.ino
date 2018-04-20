@@ -1,12 +1,108 @@
-#include <WiFiClientSecure.h>
+#include <WiFiClient.h>
 #include <M5Stack.h>
 #include <avator.h>
 #include <ArduinoJson.h>
+#include <AquesTalkTTS.h>
 #include "const.h"
 #include <printjp.h>
 
+/*
+ ESP8266 Hello World urlencode by Steve Nelson
+ URLEncoding is used all the time with internet urls. This is how urls handle funny characters
+ in a URL. For example a space is: %20
+ These functions simplify the process of encoding and decoding the urlencoded format.
+  
+ It has been tested on an esp12e (NodeMCU development board)
+ This example code is in the public domain, use it however you want. 
+  Prerequisite Examples:
+  https://github.com/zenmanenergy/ESP8266-Arduino-Examples/tree/master/helloworld_serial
+*/
+String urlencode(String str)
+{
+    String encodedString="";
+    char c;
+    char code0;
+    char code1;
+    char code2;
+    for (int i =0; i < str.length(); i++){
+      c=str.charAt(i);
+      if (c == ' '){
+        encodedString+= '+';
+      } else if (isalnum(c)){
+        encodedString+=c;
+      } else{
+        code1=(c & 0xf)+'0';
+        if ((c & 0xf) >9){
+            code1=(c & 0xf) - 10 + 'A';
+        }
+        c=(c>>4)&0xf;
+        code0=c+'0';
+        if (c > 9){
+            code0=c - 10 + 'A';
+        }
+        code2='\0';
+        encodedString+='%';
+        encodedString+=code0;
+        encodedString+=code1;
+        //encodedString+=code2;
+      }
+      yield();
+    }
+    return encodedString;
+    
+}
+
 StaticJsonBuffer<8000> JSONBuffer;
 char buffer[256];
+WiFiClient client;
+
+Avator *avator;
+int count = 0;
+void breath(void *args)
+{
+  int c = 0;
+  for(;;)
+  {
+    c = c + 1 % 100;
+    float f = sin(c * 2 * PI / 100.0);
+    avator->setBreath(f);
+    delay(33);
+  }
+}
+void drawLoop(void *args)
+{
+  float last = 0;
+  for(;;)
+  {
+    int level = TTS.getLevel();
+    float f = level / 12000.0;
+    float open = min(1.0, last + f / 2.0);
+    last = f;
+    avator->setMouthOpen(open);
+    avator->draw();
+    delay(33);
+  }
+}
+void saccade(void *args)
+{
+  for(;;)
+  {
+    float vertical = (float)rand()/(float)(RAND_MAX / 2) - 1;
+    float horizontal = (float)rand()/(float)(RAND_MAX / 2) - 1;
+    avator->setGaze(vertical, horizontal);
+    delay(500 + 100 * random(20));
+  }
+}
+void blink(void *args)
+{
+  for(;;)
+  {
+    avator->setEyeOpen(1);
+    delay(2500 + 100 * random(20));
+    avator->setEyeOpen(0);
+    delay(300 + 10 * random(20));
+  }
+}
 
 int connectWifi()
 {
@@ -28,11 +124,40 @@ int connectWifi()
   }
 }
 
-void showTweets()
+String getTweets()
 {
-  M5.Lcd.clear();
+  if (!client.connect(HOST, 80)) {
+    Serial.println("host connection failed");
+    return "[]";
+  }
+  Serial.println("host connection success");
+  String url = "/function-1";
+  url += "?word=" + urlencode("技術書典");
+
+  String request = "GET " + url + " HTTP/1.1\r\n"
+  + "Host: " + HOST + "\r\n"
+  + "Connection: close\r\n\r\n";
+
+  client.print(request);
+
+  int i = 0;
+  while (client.connected()) {
+    String line = client.readStringUntil('\n');
+    if (line == "\r")
+    {
+      String result = client.readStringUntil('\n');
+      client.flush();
+      return result;
+    }
+  }
+}
+
+// void showTweets(String message)
+void showTweets(String message1)
+{
   JSONBuffer.clear();
-  JsonArray &parsed = JSONBuffer.parseArray(message);
+  Serial.println("parse: " + message1);
+  JsonArray &parsed = JSONBuffer.parseArray(message1);
   if (!parsed.success())
   {
     Serial.println("Parsing failed");
@@ -44,27 +169,74 @@ void showTweets()
 
     String text = tweet["text"];
     text.toCharArray(buffer, sizeof(buffer));
-    printJp(0, i * CHAR_WIDTH, buffer);
+    M5.Lcd.fillRect(0, 239 - CHAR_WIDTH * 2, M5.Lcd.width(), CHAR_WIDTH * 2, BLACK);
+    printJp(0, 239 - CHAR_WIDTH * 2, buffer);
     memset(buffer, 0, sizeof(buffer));
     const char *roman = tweet["roman"];
+    // TTS.play(roman, 100);
+    delay(10000);
   }
+}
+
+void setupAvator()
+{
+  avator = new Avator();
+  xTaskCreatePinnedToCore(
+                    drawLoop,     /* Function to implement the task */
+                    "drawLoop",   /* Name of the task */
+                    4096,      /* Stack size in words */
+                    NULL,      /* Task input parameter */
+                    1,         /* Priority of the task */
+                    NULL,      /* Task handle. */
+                    1);        /* Core where the task should run */
+  xTaskCreatePinnedToCore(
+                    saccade,     /* Function to implement the task */
+                    "saccade",   /* Name of the task */
+                    4096,      /* Stack size in words */
+                    NULL,      /* Task input parameter */
+                    3,         /* Priority of the task */
+                    NULL,      /* Task handle. */
+                    1);        /* Core where the task should run */
+  xTaskCreatePinnedToCore(
+                    breath,     /* Function to implement the task */
+                    "breath",   /* Name of the task */
+                    4096,      /* Stack size in words */
+                    NULL,      /* Task input parameter */
+                    2,         /* Priority of the task */
+                    NULL,      /* Task handle. */
+                    1);        /* Core where the task should run */
+  xTaskCreatePinnedToCore(
+                    blink,     /* Function to implement the task */
+                    "blink",   /* Name of the task */
+                    4096,      /* Stack size in words */
+                    NULL,      /* Task input parameter */
+                    2,         /* Priority of the task */
+                    NULL,      /* Task handle. */
+                    1);        /* Core where the task should run */
 }
 
 void setup()
 {
+  TTS.create(AQUESTALK_KEY);
   M5.begin();
-  int iret = connectWifi();
-  if (iret != 0)
-  {
-    Serial.printf("cannot connect to wifi: %d\n", iret);
-    return;
-  }
-  Serial.print("connected to: ");
-  Serial.println(WiFi.localIP());
+  setupAvator();
+  // int iret = connectWifi();
+  // if (iret != 0)
+  // {
+  //   Serial.printf("cannot connect to wifi: %d\n", iret);
+  //   return;
+  // }
+  // Serial.print("connected to: ");
+  // Serial.println(WiFi.localIP());
+  showTweets(message);
 }
 
 void loop()
 {
-  showTweets();
-  delay(1000);
+  M5.update();
+  if(M5.BtnA.wasPressed())
+  {
+    showTweets(getTweets());
+  }
+  delay(10);
 }

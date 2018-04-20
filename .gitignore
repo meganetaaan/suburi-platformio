@@ -4,3 +4,6 @@
 .vscode/c_cpp_properties.json
 .vscode/launch.json
 const.h
+
+/tmp/
+/lib/aqtkpico_esp32/
