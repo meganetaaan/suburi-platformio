@@ -1,3 +1,4 @@
+#include <WiFi.h>
 #include <WiFiClient.h>
 #include <M5Stack.h>
 #include <avator.h>
@@ -58,6 +59,7 @@ WiFiClient client;
 
 Avator *avator;
 int count = 0;
+bool isQRShown = false;
 void breath(void *args)
 {
   int c = 0;
@@ -79,7 +81,11 @@ void drawLoop(void *args)
     float open = min(1.0, last + f / 2.0);
     last = f;
     avator->setMouthOpen(open);
-    avator->draw();
+
+    if(!isQRShown)
+    {
+      avator->draw();
+    }
     delay(33);
   }
 }
@@ -103,6 +109,51 @@ void blink(void *args)
     delay(300 + 10 * random(20));
   }
 }
+void yottette(void *args)
+{
+  for(;;)
+  {
+    if (isQRShown || TTS.getLevel() > 0)
+    {
+      delay(5000);
+      continue;
+    }
+    int i = random(0, 5);
+    if (i == 0)
+    {
+      TTS.play("nayameru/esui-wo/sukuu/yottunosusume,ko-hyo-/hanpuchuudayo", 100);
+    }
+    else if (i == 1)
+    {
+      TTS.play("sokonoanata.chotto/miteikanai?", 100);
+    }
+    else if (i == 2)
+    {
+      TTS.play("ta-noshi--", 100);
+    }
+    else if (i == 3)
+    {
+      TTS.play("irasshaimase--", 100);
+    }
+    else if (i == 4)
+    {
+      TTS.play("esui-no/tameno/go-do-shi/arimasuyo-", 100);
+    }
+    else if (i == 5)
+    {
+      TTS.play("aa--/gosencho-en/hosii---", 100);
+    }
+    else if (i == 6)
+    {
+      TTS.play("kyo-wa/hareteirudatte?sonnna,masaka.", 90);
+    }
+    else
+    {
+      TTS.play("konnnichiwa", 100);
+    }
+    delay(30000);
+  }
+}
 
 int connectWifi()
 {
@@ -117,7 +168,11 @@ int connectWifi()
       if (currentMillis - previousMillis > timeout)
         break;
       if (WiFi.status() == WL_CONNECTED)
+      {
+        TTS.play("tsunagattayo", 100);
         return 0;
+
+      }
       delay(1000);
     }
     return 1;
@@ -180,8 +235,8 @@ void showTweets(String message)
     }
     memset(buffer, 0, sizeof(buffer));
     const char *roman = tweet["roman"];
-    TTS.play(roman, 100);
-    delay(10000);
+    TTS.play(roman, 120);
+    delay(15000);
     M5.Lcd.fillRect(0, 199, M5.Lcd.width(), 40, BLACK);
   }
 }
@@ -194,31 +249,31 @@ void setupAvator()
                     "drawLoop",   /* Name of the task */
                     4096,      /* Stack size in words */
                     NULL,      /* Task input parameter */
-                    1,         /* Priority of the task */
+                    3,         /* Priority of the task */
                     NULL,      /* Task handle. */
                     1);        /* Core where the task should run */
   xTaskCreatePinnedToCore(
                     saccade,     /* Function to implement the task */
                     "saccade",   /* Name of the task */
-                    4096,      /* Stack size in words */
+                    1024,      /* Stack size in words */
                     NULL,      /* Task input parameter */
-                    3,         /* Priority of the task */
+                    2,         /* Priority of the task */
                     NULL,      /* Task handle. */
                     1);        /* Core where the task should run */
   xTaskCreatePinnedToCore(
                     breath,     /* Function to implement the task */
                     "breath",   /* Name of the task */
-                    4096,      /* Stack size in words */
+                    1024,      /* Stack size in words */
                     NULL,      /* Task input parameter */
-                    2,         /* Priority of the task */
+                    1,         /* Priority of the task */
                     NULL,      /* Task handle. */
                     1);        /* Core where the task should run */
   xTaskCreatePinnedToCore(
                     blink,     /* Function to implement the task */
                     "blink",   /* Name of the task */
-                    4096,      /* Stack size in words */
+                    1024,      /* Stack size in words */
                     NULL,      /* Task input parameter */
-                    2,         /* Priority of the task */
+                    1,         /* Priority of the task */
                     NULL,      /* Task handle. */
                     1);        /* Core where the task should run */
 }
@@ -236,6 +291,14 @@ void setup()
   }
   Serial.print("connected to: ");
   Serial.println(WiFi.localIP());
+  xTaskCreatePinnedToCore(
+                    yottette,     /* Function to implement the task */
+                    "yottette",   /* Name of the task */
+                    4096,      /* Stack size in words */
+                    NULL,      /* Task input parameter */
+                    10,         /* Priority of the task */
+                    NULL,      /* Task handle. */
+                    0);        /* Core where the task should run */
 }
 
 void loop()
@@ -245,5 +308,34 @@ void loop()
   {
     showTweets(getTweets());
   }
-  delay(10);
+  else if(M5.BtnB.wasPressed())
+  {
+    isQRShown = !isQRShown;
+    M5.Lcd.clear();
+    delay(33);
+    M5.Lcd.clear();
+    delay(60);
+    if (isQRShown)
+    {
+      TTS.play("haiyo", 100);
+      M5.Lcd.setBrightness(10);
+      M5.Lcd.qrcode("https://techbookfest.org/market/product/25290002?v=2");
+    }
+    else{
+      M5.Lcd.setBrightness(30);
+      TTS.play("arigato-/gozaimasu", 100);
+    }
+  }
+  else if(M5.BtnC.wasPressed())
+  {
+    if (WiFi.status() != WL_CONNECTED)
+    {
+      connectWifi();
+    }
+    else
+    {
+      TTS.play("mou/tsunagatteruyo", 100);
+    }
+  }
+  delay(33);
 }
